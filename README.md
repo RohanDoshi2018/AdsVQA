@@ -55,6 +55,12 @@ python main.py --eval
 This will generate `result.json` (validation set only), format is referred to [vqa evaluation format](http://www.visualqa.org/evaluation.html). 
 
 
+## Run Tensorboard Server. Use Ngrok tunnel to access server remotely.
+```
+tensorboard --logdir /u/rkdoshi/AdsVQA/data/ad_data/tb
+```
+
+
 ## Notes
 - The default classifier is softmax classifier, sigmoid multi-label classifier is also implemented but I can't train based on that.
 - Training for 50 epochs reach around 64.42% training accuracy.

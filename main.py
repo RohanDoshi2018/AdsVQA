@@ -1,24 +1,27 @@
+from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
-from __future__ import absolute_import
 
-import os
-import pdb
-import time
-import json
 import argparse
+import json
+import os
+import os.path as osp
+import pdb
+import pytz
 
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+
+from datetime import datetime
+from tensorboardX import SummaryWriter
 from torch.autograd import Variable
 
-import numpy as np
-
-from model import Model
 from loader import Data_loader
+from model import Model
 
-def test(args):
+def test(args, tb_writer):
     # Some preparation
     torch.manual_seed(1000)
     if torch.cuda.is_available():
@@ -69,7 +72,7 @@ def test(args):
     json.dump(result, open('result.json', 'w'))
     print ('Validation done')
 
-def train(args):
+def train(args, tb_writer):
     # Some preparation
     torch.manual_seed(1000)
     if torch.cuda.is_available():
@@ -156,6 +159,17 @@ def train(args):
         torch.save(tbs, 'save/model-' + str(ep+1) + '.pth.tar')
         print ('Epoch %02d done, average loss: %.3f, average accuracy: %.2f%%' % (ep+1, ep_loss / loader.n_batches, ep_correct * 100 / (loader.n_batches * args.bsize)))
 
+
+def get_tb_path(tb_dir, name):
+    if not os.path.exists(tb_dir):
+        os.makedirs(tb_dir)
+    run_name = ''
+    if name:
+        run_name += run_name
+    now = datetime.now(pytz.timezone('US/Eastern'))
+    run_name += '_%s' % now.strftime('%Y%m%d-%H%M%S')
+    return osp.join(tb_dir, run_name)
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Winner of VQA 2.0 in CVPR\'17 Workshop')
     parser.add_argument('--train', action='store_true', help='set this to train.')
@@ -167,12 +181,20 @@ if __name__ == '__main__':
     parser.add_argument('--emb', metavar='', type=int, default=300, help='embedding dimension. (50, 100, 200, *300)')
     parser.add_argument('--modelpath', metavar='', type=str, default=None, help='trained model path.')
     parser.add_argument('--multilabel', metavar='', type=bool, default=False, help='set this to use multilabel.')
+    parser.add_argument('--name', metavar='', type=str, default=None, help='name of tb run')
+
     args, unparsed = parser.parse_known_args()
     if len(unparsed) != 0: raise SystemExit('Unknown argument: {}'.format(unparsed))
+
+    tb_dir = 'data/tb' # TODO: make this an argument
+    tb_path = get_tb_path(tb_dir, args.name)
+    tb_writer = SummaryWriter(tb_path)
+
+    tb_writer.add_text('main/test', 'Hello World')
+
     if args.train:
-        train(args)
+        train(args, tb_writer)
     if args.eval:
-        test(args)
+        test(args, tb_writer)
     if not args.train and not args.eval:
         parser.print_help()
-
