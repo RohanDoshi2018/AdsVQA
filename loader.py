@@ -4,118 +4,143 @@ from __future__ import print_function
 
 import _pickle as pickle
 import json
-import pdb
-
+import os.path as osp
 
 import numpy as np
 
 class Data_loader:
-    # Before using data loader, make sure your data/ folder contains required files
-    def __init__(self, batch_size=512, emb_dim=300, multilabel=False, train=True):
+    def __init__(self, batch_size=512, emb_dim=300, train=True):
         self.bsize = batch_size
         self.emb_dim = emb_dim
-        self.multilabel = multilabel
         self.train = train
-        self.seqlen = 14    # hard set based on paper
+        self.seqlen = 20    # hard-coded
 
-        q_dict = pickle.load(open('data/train_q_dict.p', 'rb'))
-        self.q_itow = q_dict['itow']
-        self.q_wtoi = q_dict['wtoi']
-        self.q_words = len(self.q_itow) + 1
-
-        a_dict = pickle.load(open('data/train_a_dict.p', 'rb'))
-        self.a_itow = a_dict['itow']
-        self.a_wtoi = a_dict['wtoi']
-        self.n_answers = len(self.a_itow) + 1
+        with open('/u/rkdoshi/AdsVQA/data/ads/ad_data/ImageSets/train.txt', 'r') as f:
+            train_img_fnames = f.readlines()
+            train_img_fnames = [x.strip() for x in train_img_fnames]
+            train_img_fnames = set([x.split('.')[0] for x in train_img_fnames]) # remove filetype
 
         if train:
-            self.vqa = json.load(open('data/vqa_train_final.json'))
-            self.n_questions = len(self.vqa)
-        else:
-            self.vqa = json.load(open('data/vqa_val_final.json'))
-            self.n_questions = len(self.vqa)
+            with open('data/ads/ad_data/train/QA_Combined_Action_Reason_train.json', 'r') as f:
+                text_annotations = json.load(f)
+        else: # load test stuff
+            with open('data/ads/ad_data/train/QA_Combined_Action_Reason_test.json', 'r') as f:
+                text_annotations = json.load(f)
 
-        # should have more efficient way to load image feature
-        self.i_feat = np.load('data/coco_features.npy').item()
+        # {q_id: {'query': <Action-Reason string, 'img_id':<img_id>, 'img_feat': <np.array>,'score': <0/1>}}
+        self.mem = {} 
+        mem_counter = 0
+
+        for img_fname, annotations in text_annotations.items():
+            img_fname_prefix = img_fname.split('.')[0]
+
+            if img_fname_prefix in train_img_fnames:
+
+                pos = annotations[0]
+                neg = [i for i in annotations[1] if i not in pos]
+
+                img_feat_fname =  img_fname_prefix + '.npz'
+                img_filepath = osp.join('/opt/visualai/ads/img_features/', img_feat_fname)
+                img_feat = np.load(img_filepath)['feat'][()]
+                img_feat = np.concatenate([v for v in img_feat.values()], axis=0)
+
+                for annotation in pos:
+                    self.mem[mem_counter] = {
+                        'query': annotation,
+                        'img_fname_prefix': img_fname_prefix, # TODO: used?
+                        'img_feat': img_feat,
+                        'score': 1
+                    }
+                    mem_counter += 1
+
+                for annotation in neg:
+                    self.mem[mem_counter] = {
+                        'query': annotation,
+                        'img_fname_prefix': img_fname_prefix, # TODO: used?
+                        'img_feat': img_feat,
+                        'score': 0,
+                    }
+                    mem_counter += 1
+
+        self.n_queries = len(self.mem.keys())
 
         print ('Loading done')
 
         # initialize loader
-        self.n_batches = self.n_questions // self.bsize
-        self.K = self.i_feat.values()[0].shape[0]
-        self.feat_dim = self.i_feat.values()[0].shape[1]
+        self.n_batches = self.n_queries // self.bsize
+        self.K = 100 # hard-coded for now
+        self.feat_dim = 1024  # hard-coded for now
+
         self.init_pretrained_wemb(emb_dim)
         self.epoch_reset()
 
     def init_pretrained_wemb(self, emb_dim):
         """From blog.keras.io"""
-        embeddings_index = {}
-        f = open('data/glove.6B.' + str(emb_dim) + 'd.txt')
+        embeddings_lookup = {}
+        f = open('data/ads/glove/glove.6B.' + str(emb_dim) + 'd.txt')
         for line in f:
             values = line.split()
             word = values[0]
-            coefs = np.asarray(values[1:], dtype=np.float32)
-            embeddings_index[word] = coefs
+            embedding_vec = np.asarray(values[1:], dtype=np.float32)
+            embeddings_lookup[word] = embedding_vec
         f.close()
 
-        embedding_mat = np.zeros((self.q_words, emb_dim), dtype=np.float32)
-        for word, i in self.q_wtoi.items():
-            embedding_v = embeddings_index.get(word)
+
+        self.itow, self.wtoi = {}, {}
+        self.vocab_size = len(embeddings_lookup.keys())
+        self.pretrained_wemb = np.zeros((self.vocab_size, emb_dim), dtype=np.float32)    
+        for i, word in enumerate(embeddings_lookup.keys()):
+            embedding_v = embeddings_lookup.get(word)
             if embedding_v is not None:
-                embedding_mat[i] = embedding_v
-        
-        self.pretrained_wemb = embedding_mat
+                self.pretrained_wemb[i, :] = embedding_v
+            self.itow[i] = word
+            self.wtoi[word] = i
 
     def epoch_reset(self):
         self.batch_ptr = 0
-        np.random.shuffle(self.vqa)
+        np.random.shuffle(self.mem)
 
     def next_batch(self):
         """Return 3 things:
-        question -> (seqlen, batch)
-        answer -> (batch, n_answers) or (batch, )
-        image feature -> (batch, feat_dim)
+        query_batch -> (batch, seqlen)
+        image feature -> (batch, K, feat_dim)
+        label -> (batch); 0 or 1 scalar
         """
-        if self.batch_ptr + self.bsize >= self.n_questions:
+        if self.batch_ptr + self.bsize >= self.n_queries:
             self.epoch_reset()
 
-        q_batch = []
-        a_batch = []
-        i_batch = []
-        for b in xrange(self.bsize):
+        query_batch = []
+        img_feat_batch = []
+        # TODO: add symbol_feat_batch
+        label_batch = []
+
+
+        for b in range(self.bsize):
             # question batch
             q = [0] * self.seqlen
-            for i, w in enumerate(self.vqa[self.batch_ptr + b]['question_toked']):
+            for i, w in enumerate(self.mem[self.batch_ptr + b]['query']):
+                if i >= self.seqlen:
+                    break
+
                 try:
-                    q[i] = self.q_wtoi[w]
+                    q[i] = self.wtoi[w]
                 except:
                     q[i] = 0    # validation questions may contain unseen word
-            q_batch.append(q)
+            query_batch.append(q)
 
-            # answer or question id batch
-            if self.train:
-                if self.multilabel:
-                    a = np.zeros(self.n_answers, dtype=np.float32)
-                    for w, c in self.vqa[self.batch_ptr + b]['answers_w_scores']:
-                        a[self.a_wtoi[w]] = c
-                    a_batch.append(a)
-                else:
-                    try:
-                        a_batch.append(self.a_wtoi[self.vqa[self.batch_ptr + b]['answer']])
-                    except:
-                        a_batch.append(0)
-            else:
-                # in validation phase return question id instead of answer to write to a json file
-                # you could also modify this to calculate the accuracy
-                a_batch.append(self.vqa[self.batch_ptr + b]['question_id'])
-            
             # image batch
-            iid = self.vqa[self.batch_ptr + b]['image_id']
-            i_batch.append(self.i_feat[iid])
+            img_feat = self.mem[self.batch_ptr + b]['img_feat']
+            img_feat_batch.append(img_feat) 
+
+            # label batch
+            label = self.mem[self.batch_ptr + b]['score']
+            label_batch.append(label)
 
         self.batch_ptr += self.bsize
-        q_batch = np.asarray(q_batch)   # (batch, seqlen)
-        a_batch = np.asarray(a_batch)   # (batch, n_answers) or (batch, )
-        i_batch = np.asarray(i_batch)   # (batch, feat_dim)
-        return q_batch, a_batch, i_batch
+        query_batch = np.asarray(query_batch)   # (batch, seqlen)
+        img_feat_batch = np.asarray(img_feat_batch)   # (batch, K, feat_dim)
+        label_batch = np.asarray(label_batch)
 
+        import pdb; pdb.set_trace()
+
+        return query_batch, img_feat_batch, label_batch

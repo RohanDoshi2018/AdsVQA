@@ -57,7 +57,7 @@ This will generate `result.json` (validation set only), format is referred to [v
 
 ## Run Tensorboard Server. Use Ngrok tunnel to access server remotely.
 ```
-tensorboard --logdir /u/rkdoshi/AdsVQA/data/ad_data/tb
+tensorboard --logdir /u/rkdoshi/AdsVQA/data/ads/tb
 ```
 
 

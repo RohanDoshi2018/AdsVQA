@@ -21,6 +21,9 @@ from torch.autograd import Variable
 from loader import Data_loader
 from model import Model
 
+
+# TODO: NEED TO REWRITE to go through 15 choices
+# TODO: NEED special data_loader mods for test
 def test(args, tb_writer):
     # Some preparation
     torch.manual_seed(1000)
@@ -30,17 +33,17 @@ def test(args, tb_writer):
         raise SystemExit('No CUDA available, don\'t do this.')
 
     print ('Loading data')
-    loader = Data_loader(args.bsize, args.emb, args.multilabel, train=False)
+    loader = Data_loader(args.bsize, args.emb, train=False)
     print ('Parameters:\n\tvocab size: %d\n\tembedding dim: %d\n\tK: %d\n\tfeature dim: %d\
-            \n\thidden dim: %d\n\toutput dim: %d' % (loader.q_words, args.emb, loader.K, loader.feat_dim,
+            \n\thidden dim: %d\n\toutput dim: %d' % (loader.vocab_size, args.emb, loader.K, loader.feat_dim,
                 args.hid, loader.n_answers))
 
-    model = Model(vocab_size=loader.q_words,
+    model = Model(vocab_size=loader.vocab_size,
                   emb_dim=args.emb,
                   K=loader.K,
                   feat_dim=loader.feat_dim,
                   hid_dim=args.hid,
-                  out_dim=loader.n_answers,
+                  out_dim=loader.n_answers, # TODO: get rid of loader.n_answers
                   pretrained_wemb=loader.pretrained_wemb)
 
     model = model.cuda()
@@ -53,21 +56,23 @@ def test(args, tb_writer):
         raise SystemExit('Need to provide model path.')
 
     result = []
-    for step in xrange(loader.n_batches):
+    for step in range(loader.n_batches):
         # Batch preparation
-        q_batch, a_batch, i_batch = loader.next_batch()
+        q_batch, i_batch, label_batch = loader.next_batch()
         q_batch = Variable(torch.from_numpy(q_batch))
         i_batch = Variable(torch.from_numpy(i_batch))
-        q_batch, i_batch = q_batch.cuda(), i_batch.cuda()
+        q_batch, i_batch, label_batch = q_batch.cuda(), i_batch.cuda(), label_batch.cuda()
 
         # Do one model forward and optimize
         output = model(q_batch, i_batch)
-        _, ix = output.data.max(1)
-        for i, qid in enumerate(a_batch):
-            result.append({
-                'question_id': qid,
-                'answer': loader.a_itow[ix[i]]
-            })
+
+        # TODO: fix this
+        # _, ix = output.data.max(1)
+        # for i, qid in enumerate(a_batch):
+        #     result.append({
+        #         'question_id': qid,
+        #         'answer': loader.a_itow[ix[i]]
+        #     })
 
     json.dump(result, open('result.json', 'w'))
     print ('Validation done')
@@ -81,28 +86,25 @@ def train(args, tb_writer):
         raise SystemExit('No CUDA available, don\'t do this.')
 
     print ('Loading data')
-    loader = Data_loader(args.bsize, args.emb, args.multilabel)
+    loader = Data_loader(args.bsize, args.emb)
     print ('Parameters:\n\tvocab size: %d\n\tembedding dim: %d\n\tK: %d\n\tfeature dim: %d\
-            \n\thidden dim: %d\n\toutput dim: %d' % (loader.q_words, args.emb, loader.K, loader.feat_dim,
-                args.hid, loader.n_answers))
+            \n\thidden dim: %d' % (loader.vocab_size, args.emb, loader.K, loader.feat_dim,
+                args.hid))
     print ('Initializing model')
 
-    model = Model(vocab_size=loader.q_words,
+    model = Model(vocab_size=loader.vocab_size,
                   emb_dim=args.emb,
                   K=loader.K,
                   feat_dim=loader.feat_dim,
                   hid_dim=args.hid,
-                  out_dim=loader.n_answers,
+                  out_dim=2,
                   pretrained_wemb=loader.pretrained_wemb)
-    
-    if args.multilabel:
-        criterion = nn.BCELossWithLogis()
-    else:
-        criterion = nn.CrossEntropyLoss()
+
+    loss_func = nn.BCELoss()
     
     # Move it to GPU
     model = model.cuda()
-    criterion = criterion.cuda()
+    loss_func = loss_func.cuda()
 
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
 
@@ -113,35 +115,38 @@ def train(args, tb_writer):
         model.load_state_dict(ckpt['state_dict'])
         optimizer.load_state_dict(ckpt['optimizer'])
 
-    # Training script 
+    # Training script
     print ('Start training.')
-    for ep in xrange(args.ep):
+    for ep in range(args.ep):
         ep_loss = 0
         ep_correct = 0
-        for step in xrange(loader.n_batches):
+        for step in range(loader.n_batches):
             # Batch preparation
-            q_batch, a_batch, i_batch = loader.next_batch()
+            q_batch, i_batch, label_batch = loader.next_batch()
             q_batch = Variable(torch.from_numpy(q_batch))
-            a_batch = Variable(torch.from_numpy(a_batch))
             i_batch = Variable(torch.from_numpy(i_batch))
-            q_batch, a_batch, i_batch = q_batch.cuda(), a_batch.cuda(), i_batch.cuda()
+            label_batch = Variable(torch.from_numpy(label_batch))
+            q_batch, i_batch, label_batch = q_batch.cuda(), i_batch.cuda(), label_batch.cuda()
 
             # Do model forward
             output = model(q_batch, i_batch)
-            loss = criterion(output, a_batch)
+            loss = loss_func(output, label_batch)
 
-            # Some stats
+            # Calculate accuracy and loss
             _, oix = output.data.max(1)
-            if args.multilabel:
-                _, aix = a_batch.data.max(1)
-            else:
-                aix = a_batch.data
+            aix = a_batch.data
             correct = torch.eq(oix, aix).sum()
             ep_correct += correct
             ep_loss += loss.data[0]
             if step % 40 == 0:
                 print ('Epoch %02d(%03d/%03d), loss: %.3f, correct: %3d / %d (%.2f%%)' %
                         (ep+1, step, loader.n_batches, loss.data[0], correct, args.bsize, correct * 100 / args.bsize))
+
+            # write accuracy and loss to tensorboard
+            total_batch_count = ep *  loader.n_batches + step
+            acc_perc = correct / args.bsize
+            self.tb_writer.add_scalar('train/loss', loss.data[0], total_batch_count)
+            self.tb_writer.add_scalar('train/acc', acc_perc, total_batch_count)
 
             # compute gradient and do optim step
             optimizer.zero_grad()
@@ -180,17 +185,16 @@ if __name__ == '__main__':
     parser.add_argument('--hid', metavar='', type=int, default=512, help='hidden dimension.')
     parser.add_argument('--emb', metavar='', type=int, default=300, help='embedding dimension. (50, 100, 200, *300)')
     parser.add_argument('--modelpath', metavar='', type=str, default=None, help='trained model path.')
-    parser.add_argument('--multilabel', metavar='', type=bool, default=False, help='set this to use multilabel.')
     parser.add_argument('--name', metavar='', type=str, default=None, help='name of tb run')
+    parser.add_argument('--tb_dir', metavar='', type=str, default='data/ads/tb', help='path to tb directory')
 
     args, unparsed = parser.parse_known_args()
     if len(unparsed) != 0: raise SystemExit('Unknown argument: {}'.format(unparsed))
 
-    tb_dir = 'data/tb' # TODO: make this an argument
-    tb_path = get_tb_path(tb_dir, args.name)
+    tb_path = get_tb_path(args.tb_dir, args.name)
     tb_writer = SummaryWriter(tb_path)
 
-    tb_writer.add_text('main/test', 'Hello World')
+    # tb_writer.add_text('main/test', 'Hello World')
 
     if args.train:
         train(args, tb_writer)
