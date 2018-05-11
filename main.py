@@ -8,6 +8,7 @@ import os
 import os.path as osp
 import pdb
 import pytz
+import tqdm
 
 import numpy as np
 import torch
@@ -124,7 +125,7 @@ def train(args, tb_writer):
         ep_correct = 0
         ep_zeros = 0.
         ep_total = 0.
-        for step in range(loader.n_batches):
+        for step in tqdm.tqdm(range(loader.n_batches)):
             # Batch preparation
             q_batch, i_batch, s_batch, label_batch = loader.next_batch()
             q_batch = Variable(torch.from_numpy(q_batch))
@@ -150,7 +151,7 @@ def train(args, tb_writer):
             ep_zeros += zeros
             ep_total += oix.numel()
             if step % 40 == 0 and step > 0:
-                print ('Epoch %02d(%03d/%03d), loss: %.3f, correct: %3d / %d (%.2f%%), zeros: %.3f%%' %
+                tqdm.tqdm.write('Epoch %02d(%03d/%03d), loss: %.3f, correct: %3d / %d (%.2f%%), zeros: %.3f%%' %
                         (ep+1, step, loader.n_batches, loss.data[0], correct, args.bsize, correct * 100 / args.bsize,
                             ep_zeros * 100. / ep_total))
                 ep_zeros = 0.
