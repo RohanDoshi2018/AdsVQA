@@ -3,10 +3,11 @@ from __future__ import division
 from __future__ import print_function
 
 import argparse
-import json
+# import json
 import os
 import os.path as osp
-import pdb
+import io 
+# import pdb
 import pytz
 
 import numpy as np
@@ -19,10 +20,20 @@ from datetime import datetime
 from tensorboardX import SummaryWriter
 from torch.autograd import Variable
 
+from sklearn.metrics import (
+        precision_recall_curve,
+        confusion_matrix,
+        average_precision_score)
+
 import pickle
 
 from loader import Data_loader
 from model import Model
+from plotting_help import plot_confusion_matrix
+import matplotlib as mpl
+mpl.use('Agg')
+import matplotlib.pyplot as plt
+from PIL import Image
 
 def weights_init(m):
     classname = m.__class__.__name__
@@ -181,6 +192,8 @@ def train(args, tb_writer):
         ep_zeros = 0.
         ep_total = 0.
         all_preds = {}
+        vLogits = [] 
+        vGt = []
         for step in tqdm.tqdm(range(loader.n_batches)):
             # Batch preparation
             q_batch, i_batch, s_batch, label_batch, img_indices = loader.next_batch()
@@ -203,6 +216,8 @@ def train(args, tb_writer):
             correct = torch.eq(oix, aix).sum()
             ep_correct += correct
             ep_loss += loss.data[0]
+            vLogits.append(oix.cpu().numpy())
+            vGt.append(aix.cpu().numpy())
             zeros = (oix == 0).long().sum()
             ep_zeros += zeros
             ep_total += oix.numel()
@@ -244,7 +259,39 @@ def train(args, tb_writer):
             total += 1.
         print("Accuracy: {:%} ({} {})".format(total_right / total, float(total_right), float(total)))
         tb_writer.add_scalar('train/perc', float(total_right / total), ep)
-            
+        # import pdb
+        # pdb.set_trace()
+        vLogits = np.array(vLogits).reshape(-1)
+        vGt = np.array(vGt).reshape(-1)
+        print("Overall bin accuracy: {:%}".format((vLogits == vGt).astype(np.uint16).mean()))
+
+        # Plot precision-recall curve
+        precision, recall, _ = precision_recall_curve(vGt, vLogits)
+        average_precision = average_precision_score(vGt, vLogits)
+        plt.figure()
+        plt.step(recall, precision, color='b', alpha=0.2,
+                         where='post')
+        plt.fill_between(recall, precision, step='post', alpha=0.2,
+                                 color='b')
+        plt.xlabel('Recall')
+        plt.ylabel('Precision')
+        plt.ylim([0.0, 1.05])
+        plt.xlim([0.0, 1.0])
+        plt.title('2-class Precision-Recall curve: AP={0:0.2f}'.format(
+                  average_precision))
+        buf = io.BytesIO()
+        plt.savefig(buf, format='png')
+        buf.seek(0)
+        prec_rec_im = Image.open(buf)
+        prec_rec_arr = np.array(prec_rec_im)
+        buf.close()
+        tb_writer.add_image('train/prec_rec', prec_rec_arr, ep)
+
+        # Display Confusion Matrix
+        cm = confusion_matrix(vGt, vLogits)
+        cm_arr = plot_confusion_matrix(cm, list(range(2)))
+        tb_writer.add_image('train/cm_im', cm_arr, ep)
+
         all_preds = {}
         # Save model after every epoch
         tbs = {
@@ -291,7 +338,7 @@ if __name__ == '__main__':
     parser.add_argument('--name', metavar='', type=str, default=None, help='name of tb run')
     parser.add_argument('--tb_dir', metavar='', type=str, default='data/ads/tb', help='path to tb directory')
     parser.add_argument('--sym', metavar='', type=bool, default=False, help='symbolic stream toggle')
-    parser.add_argument('--gpu', metavar='', type=int, default=0, help='gpu number')
+    parser.add_argument('--gpu', metavar='', type=int, default=0, help='rpu number')
     parser.add_argument('--noatt', metavar='', type=bool, default=False, help='Removes the attention component of the model')
 
 
@@ -311,4 +358,5 @@ if __name__ == '__main__':
     if args.eval:
         test(args, tb_writer)
     if not args.train and not args.eval:
+        print("Must choose either --train or --eval")
         parser.print_help()
