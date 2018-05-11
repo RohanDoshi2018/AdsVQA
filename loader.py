@@ -124,7 +124,7 @@ class Data_loader:
         img_feat_batch = []
         symbol_feat_batch = []
         label_batch = []
-
+        img_indices = []
         for b in range(self.bsize):
             # question batch
             q = self.mem[self.batch_ptr + b]['query']
@@ -142,13 +142,17 @@ class Data_loader:
             label = self.mem[self.batch_ptr + b]['score']
             label_batch.append(label)
 
+            # ix
+            ix = self.mem[self.batch_ptr + b]['img_fname_prefix']
+            img_indices.append(ix)
+
         self.batch_ptr += self.bsize
         query_batch = np.asarray(query_batch)   # (batch, seqlen)
         img_feat_batch = np.asarray(img_feat_batch)   # (batch, K, feat_dim)
         symbol_feat_batch = np.asarray(symbol_feat_batch)   # (batch, K, feat_dim)
         label_batch = np.asarray(label_batch)
 
-        return query_batch, img_feat_batch, symbol_feat_batch, label_batch
+        return query_batch, img_feat_batch, symbol_feat_batch, label_batch, img_indices
 
 def load_cache_obj(name):
     with open('data/ads/cache/' + name + '.pkl', 'rb') as f:

@@ -13,6 +13,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import tqdm
 
 from datetime import datetime
 from tensorboardX import SummaryWriter
@@ -25,6 +26,12 @@ def weights_init(m):
     classname = m.__class__.__name__
     if classname.find('Conv') != -1:
         m.weight.data.normal_(0.0, 0.02)
+    elif isinstance(m, nn.Linear):
+        size = m.weight.size()
+        fan_out = size[0] # number of rows
+        fan_in = size[1] # number of columns
+        variance = np.sqrt(2.0/(fan_in + fan_out))
+        m.weight.data.normal_(0.0, variance) 
     elif classname.find('BatchNorm') != -1:
         m.weight.data.normal_(1.0, 0.02)
         m.bias.data.fill_(0)
@@ -66,7 +73,7 @@ def test(args, tb_writer):
     result = []
     for step in range(loader.n_batches):
         # Batch preparation
-        q_batch, i_batch, s_batch, label_batch = loader.next_batch()
+        q_batch, i_batch, s_batch, label_batch, img_indices = loader.next_batch()
         q_batch = Variable(torch.from_numpy(q_batch))
         i_batch = Variable(torch.from_numpy(i_batch))
         s_batch = Variable(torch.from_numpy(s_batch))
@@ -113,7 +120,8 @@ def train(args, tb_writer):
     model.apply(weights_init)
 
     # loss_func = nn.BCELoss()
-    weight = torch.Tensor([3./18., 1])
+    # weight = torch.Tensor([3./9., 1])
+    weight = torch.Tensor([1., 1.])
     loss_func = nn.CrossEntropyLoss(weight=weight)
     
     # Move it to GPU
@@ -134,9 +142,13 @@ def train(args, tb_writer):
     for ep in range(args.ep):
         ep_loss = 0
         ep_correct = 0
-        for step in range(loader.n_batches):
+        ep_zeros = 0.
+        ep_total = 0.
+        all_preds = {}
+        for step in tqdm.tqdm(range(loader.n_batches)):
             # Batch preparation
-            q_batch, i_batch, s_batch, label_batch = loader.next_batch()
+            q_batch, i_batch, s_batch, label_batch, img_indices = loader.next_batch()
+            # import pdb; pdb.set_trace()
             q_batch = Variable(torch.from_numpy(q_batch))
             i_batch = Variable(torch.from_numpy(i_batch))
             s_batch = Variable(torch.from_numpy(s_batch))
@@ -147,16 +159,23 @@ def train(args, tb_writer):
             output = model(q_batch, i_batch, s_batch)
             # logits = output[:, 1]
             # loss = loss_func(logits.squeeze(), label_batch.float())
-            loss = loss_func(output, label_batch.float())
+            loss = loss_func(output, label_batch)
             # Calculate accuracy and loss
+            # import pdb; pdb.set_trace()
             _, oix = output.data.max(1)
-            aix = a_batch.data
+            aix = label_batch.data
             correct = torch.eq(oix, aix).sum()
             ep_correct += correct
             ep_loss += loss.data[0]
             zeros = (oix == 0).long().sum()
             ep_zeros += zeros
             ep_total += oix.numel()
+            smop = F.softmax(output).data.cpu().numpy()
+            for v, ix in enumerate(img_indices):
+                if ix not in all_preds:
+                    all_preds[ix] = {'p': [], 'gt': []}
+                all_preds[ix]['gt'].append(label_batch[v].data.cpu().numpy())
+                all_preds[ix]['p'].append(smop[v, 1])
             if step % 2 == 0 and step > 0:
                 tqdm.tqdm.write('Epoch %02d(%03d/%03d), loss: %.3f, correct: %3d / %d (%.2f%%), zeros: %.3f%%' %
                         (ep+1, step, loader.n_batches, loss.data[0], correct, args.bsize, correct * 100 / args.bsize,
@@ -167,14 +186,31 @@ def train(args, tb_writer):
             # write accuracy and loss to tensorboard
             total_batch_count = ep *  loader.n_batches + step
             acc_perc = correct / args.bsize
-            self.tb_writer.add_scalar('train/loss', loss.data[0], total_batch_count)
-            self.tb_writer.add_scalar('train/acc', acc_perc, total_batch_count)
+            tb_writer.add_scalar('train/loss', loss.data[0], total_batch_count)
+            tb_writer.add_scalar('train/acc', acc_perc, total_batch_count)
 
             # compute gradient and do optim step
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
 
+        print("")
+        total_right = 0.
+        total = 0.
+        # import pdb
+        # pdb.set_trace()
+        for ix, dat in all_preds.items():
+            _preds = dat['p']
+            _gt = dat['gt']
+            if np.array(_gt).sum() == 0:
+                continue
+            maxpred = np.argmax(_preds)
+            valat = _gt[maxpred]
+            total_right += valat
+            total += 1.
+        print("Accuracy: {:%} ({} {})".format(total_right / total, total_right, total))
+            
+        all_preds = {}
         # Save model after every epoch
         tbs = {
             'epoch': ep + 1,
@@ -209,9 +245,12 @@ if __name__ == '__main__':
     parser.add_argument('--modelpath', metavar='', type=str, default=None, help='trained model path.')
     parser.add_argument('--name', metavar='', type=str, default=None, help='name of tb run')
     parser.add_argument('--tb_dir', metavar='', type=str, default='data/ads/tb', help='path to tb directory')
+    parser.add_argument('--sym', metavar='', type=bool, default=False, help='symbolic stream toggle')
+
 
     args, unparsed = parser.parse_known_args()
     if len(unparsed) != 0: raise SystemExit('Unknown argument: {}'.format(unparsed))
+    print(args)
 
     tb_path = get_tb_path(args.tb_dir, args.name)
     tb_writer = SummaryWriter(tb_path)

@@ -122,13 +122,13 @@ class Model(nn.Module):
                 v_head_sy, self.gt_W_sy, self.gt_W_prime_sy)
             h_sy = torch.mul(q_sy, v_sy)
             s_head = self.clf_w(torch.cat((h, h_sy), -1))
-            s_head = F.softmax(s_head, dim=1)
+            # s_head = F.softmax(s_head, dim=1)
             return s_head
 
         # output classifier
         # s_head = self.clf_w(self._gated_tanh(h, self.gt_W_clf, self.gt_W_prime_clf))
         s_head = self.clf_w(h)
-        s_head = F.softmax(s_head, dim=1)
+        # s_head = F.softmax(s_head, dim=1)
 
         return s_head               # (batch, out_dim)
 
