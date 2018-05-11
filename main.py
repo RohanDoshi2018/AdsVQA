@@ -95,7 +95,6 @@ def test(args, tb_writer, model=None, ep=0):
 
         img_feat = ad_data['img_feat']
         symbol_feat = ad_data['symbol_feat']
-
         for j in range(15):
             # question batch
             q = ad_data['query'][j]
@@ -122,11 +121,12 @@ def test(args, tb_writer, model=None, ep=0):
         s_batch = Variable(torch.from_numpy(s_batch))
         l_batch = Variable(torch.from_numpy(l_batch))
         q_batch, i_batch, s_batch, l_batch = q_batch.cuda(), i_batch.cuda(), s_batch.cuda(), l_batch.cuda()
-
         output = model(q_batch, i_batch, s_batch)
-
-        confidence, pred_label = output.data.max(1)
-        max_conf, max_conf_idx = torch.max(confidence, 0)
+        logits = F.softmax(output)
+        logits = logits[:, 1].data
+        max_conf, max_conf_idx = torch.max(logits, 0)
+        # confidence, pred_label = output.data.max(1)
+        # max_conf, max_conf_idx = torch.max(confidence, 0)
 
         pos_idx_pred = max_conf_idx.cpu().numpy()[0]
         pos_idx_true =  np.where(np.array(ad_data['score']) == 1)[0]
