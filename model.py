@@ -63,7 +63,7 @@ class Model(nn.Module):
         qenc = enc[-1]                              # (batch, hid_dim)
         
         # image encoding
-        image = F.normalize(image, -1)  # (batch, K, feat_dim)
+        image = F.normalize(image.float(), -1)  # (batch, K, feat_dim)
 
         # image attention
         qenc_reshape = qenc.repeat(1, self.K).view(-1, self.K, self.hid_dim).double()    # (batch, K, hid_dim) # TODO: change this cast to double??
