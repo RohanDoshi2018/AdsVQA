@@ -148,8 +148,6 @@ class Data_loader:
         symbol_feat_batch = np.asarray(symbol_feat_batch)   # (batch, K, feat_dim)
         label_batch = np.asarray(label_batch)
 
-        import pdb; pdb.set_trace()
-
         return query_batch, img_feat_batch, symbol_feat_batch, label_batch
 
 def load_cache_obj(name):

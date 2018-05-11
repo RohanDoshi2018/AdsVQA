@@ -12,7 +12,7 @@ import torch.nn.functional as F
 class Model(nn.Module):
 
     def __init__(self, vocab_size, emb_dim, K, feat_dim,
-            hid_dim, out_dim, pretrained_wemb, symstream=False):
+                 hid_dim, out_dim, pretrained_wemb, symstream=False):
         super(Model, self).__init__()
         """
         Args:
@@ -61,7 +61,7 @@ class Model(nn.Module):
         if symstream:
             self.sy_att_wa = nn.Linear(hid_dim, 1)
             # output classifier
-            self.clf_w = nn.Linear(hid_dim*2, out_dim)
+            self.clf_w = nn.Linear(hid_dim * 2, out_dim)
         else:
             self.clf_w = nn.Linear(hid_dim, out_dim)
 
@@ -82,15 +82,24 @@ class Model(nn.Module):
         image = F.normalize(image.float(), -1)  # (batch, K, feat_dim)
 
         # image attention
-        qenc_reshape = qenc.repeat(1, self.K).view(-1, self.K, self.hid_dim)  # (batch, K, hid_dim) # TODO: change this cast to double??
-        concated = torch.cat((image, qenc_reshape), -1)                         # (batch, K, feat_dim + hid_dim)
-        concated = self._gated_tanh(concated, self.gt_W_img_att, self.gt_W_prime_img_att)   # (batch, K, hid_dim)
+        # (batch, K, hid_dim) # TODO: change this cast to double??
+        qenc_reshape = qenc.repeat(1, self.K).view(-1, self.K, self.hid_dim)
+        # (batch, K, feat_dim + hid_dim)
+        concated = torch.cat((image, qenc_reshape), -1)
+        concated = self._gated_tanh(
+            concated,
+            self.gt_W_img_att,
+            self.gt_W_prime_img_att)   # (batch, K, hid_dim)
         a = self.att_wa(concated)                           # (batch, K, 1)
         a = F.softmax(a.squeeze())                          # (batch, K)
-        v_head = torch.bmm(a.unsqueeze(1), image).squeeze() # (batch, feat_dim)
+        v_head = torch.bmm(a.unsqueeze(1),
+                           image).squeeze()  # (batch, feat_dim)
 
         # element-wise (question + image) multiplication
-        q = self._gated_tanh(qenc, self.gt_W_question, self.gt_W_prime_question)
+        q = self._gated_tanh(
+            qenc,
+            self.gt_W_question,
+            self.gt_W_prime_question)
         v = self._gated_tanh(v_head, self.gt_W_img, self.gt_W_prime_img)
         h = torch.mul(q, v)         # (batch, hid_dim)
 
@@ -98,14 +107,19 @@ class Model(nn.Module):
         if self.symstream:
             symbol = F.normalize(symbol.float(), -1)
             concated_sym = torch.cat((symbol, qenc_reshape), -1)
-            concated_sym = self._gated_tanh(concated_sym, self.gt_W_sy_att, self.gt_W_prime_sy_att)
+            concated_sym = self._gated_tanh(
+                concated_sym, self.gt_W_sy_att, self.gt_W_prime_sy_att)
             a_sy = self.att_wa(concated_sym)
             a_sy = F.softmax(a.squeeze())
             v_head_sy = torch.bmm(a_sy.unsqueeze(1), symbol).squeeze()
 
             # element-wise (question + symbol features) multiplication
-            q_sy = self._gated_tanh(qenc, self.gt_W_question_sy, self.gt_W_prime_question_sy)
-            v_sy = self._gated_tanh(v_head_sy, self.gt_W_sy, self.gt_W_prime_sy)
+            q_sy = self._gated_tanh(
+                qenc,
+                self.gt_W_question_sy,
+                self.gt_W_prime_question_sy)
+            v_sy = self._gated_tanh(
+                v_head_sy, self.gt_W_sy, self.gt_W_prime_sy)
             h_sy = torch.mul(q_sy, v_sy)
             s_head = self.clf_w(torch.cat((h, h_sy), -1))
             s_head = F.softmax(s_head, dim=1)
