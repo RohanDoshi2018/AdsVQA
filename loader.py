@@ -10,19 +10,17 @@ import numpy as np
 
 from autocorrect import spell
 
-
 class Data_loader:
     def __init__(self, batch_size=512, emb_dim=300, train=True):
         self.bsize = batch_size
-        self.emb_dim = emb_dim  # fix at 300 using caching
+        self.emb_dim = emb_dim # fix at 300 using caching
         self.train = train
         self.seqlen = 20    # hard-coded
 
         # with open('/u/rkdoshi/AdsVQA/data/ads/ad_data/ImageSets/train.txt', 'r') as f:
         #     train_img_fnames = f.readlines()
         #     train_img_fnames = [x.strip() for x in train_img_fnames]
-        # train_img_fnames = set([x.split('.')[0] for x in train_img_fnames]) #
-        # remove filetype
+        #     train_img_fnames = set([x.split('.')[0] for x in train_img_fnames]) # remove filetype
 
         # if train:
         #     with open('data/ads/ad_data/train/QA_Combined_Action_Reason_train.json', 'r') as f:
@@ -74,17 +72,17 @@ class Data_loader:
 
         self.n_queries = len(self.mem.keys())
 
-        print('Loading done')
+        print ('Loading done')
 
         # initialize loader
         self.n_batches = self.n_queries // self.bsize
-        self.K = 100  # hard-coded for now
+        self.K = 100 # hard-coded for now
         self.feat_dim = 1024  # hard-coded for now
         # self.init_pretrained_wemb(emb_dim)
         self.pretrained_wemb = load_cache_obj('glove_300d_pretrained_wemb')
         self.itow = load_cache_obj('glove_300d_itow')
         self.wtoi = load_cache_obj('glove_300d_wtoi')
-        self.vocab_size = 400000  # hard-coded for now
+        self.vocab_size = 400000 # hard-coded for now
         self.epoch_reset()
 
     # def init_pretrained_wemb(self, emb_dim):
@@ -100,7 +98,7 @@ class Data_loader:
 
     #     self.itow, self.wtoi = {}, {}
     #     self.vocab_size = len(embeddings_lookup.keys())
-    #     self.pretrained_wemb = np.zeros((self.vocab_size, emb_dim))
+    #     self.pretrained_wemb = np.zeros((self.vocab_size, emb_dim))    
     #     for i, word in enumerate(embeddings_lookup.keys()):
     #         embedding_v = embeddings_lookup.get(word)
     #         if embedding_v is not None:
@@ -111,6 +109,7 @@ class Data_loader:
     def epoch_reset(self):
         self.batch_ptr = 0
         np.random.shuffle(self.mem)
+
 
     def next_batch(self):
         """Return 3 things:
@@ -128,30 +127,16 @@ class Data_loader:
 
         for b in range(self.bsize):
             # question batch
-            q = [0] * self.seqlen
-            for i, w in enumerate(
-                    self.mem[self.batch_ptr + b]['query'].split(' ')):
-                if i >= self.seqlen:
-                    break
-
-                try:
-                    # w = spell(w.lower())
-
-                    q[i] = self.wtoi[w]
-                except BaseException:
-                    q[i] = 0    # validation questions may contain unseen word
+            q = self.mem[self.batch_ptr + b]['query']
             query_batch.append(q)
-
-            # import pdb
-            # pdb.set_trace()
-
+            
             # image batch
             img_feat = self.mem[self.batch_ptr + b]['img_feat']
-            img_feat_batch.append(img_feat)
+            img_feat_batch.append(img_feat) 
 
             # symbol batch
             symbol_feat = self.mem[self.batch_ptr + b]['symbol_feat']
-            symbol_feat_batch.append(symbol_feat)
+            symbol_feat_batch.append(symbol_feat) 
 
             # label batch
             label = self.mem[self.batch_ptr + b]['score']
@@ -160,12 +145,10 @@ class Data_loader:
         self.batch_ptr += self.bsize
         query_batch = np.asarray(query_batch)   # (batch, seqlen)
         img_feat_batch = np.asarray(img_feat_batch)   # (batch, K, feat_dim)
-        symbol_feat_batch = np.asarray(
-            symbol_feat_batch)   # (batch, K, feat_dim)
+        symbol_feat_batch = np.asarray(symbol_feat_batch)   # (batch, K, feat_dim)
         label_batch = np.asarray(label_batch)
 
         return query_batch, img_feat_batch, symbol_feat_batch, label_batch
-
 
 def load_cache_obj(name):
     with open('data/ads/cache/' + name + '.pkl', 'rb') as f:
