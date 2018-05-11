@@ -31,7 +31,6 @@ class Model(nn.Module):
         self.hid_dim = hid_dim
         self.out_dim = out_dim
         self.symstream = symstream
-
         # gated tanh activation
         self.gt_W_img_att = nn.Linear(feat_dim + hid_dim, hid_dim)
         self.gt_W_prime_img_att = nn.Linear(feat_dim + hid_dim, hid_dim)
@@ -44,7 +43,7 @@ class Model(nn.Module):
 
         # gated tanh for symbol stream (symstream)
         if symstream:
-            self.gt_W_sy_att = nn.Linear(feat_dim, + hid_dim, hid_dim)
+            self.gt_W_sy_att = nn.Linear(feat_dim + hid_dim, hid_dim)
             self.gt_W_prime_sy_att = nn.Linear(feat_dim + hid_dim, hid_dim)
             self.gt_W_sy = nn.Linear(feat_dim, hid_dim)
             self.gt_W_prime_sy = nn.Linear(feat_dim, hid_dim)
@@ -97,7 +96,6 @@ class Model(nn.Module):
 
         # Symbol attention
         if self.symstream:
-            import pdb; pdb.set_trace()
             symbol = F.normalize(symbol.float(), -1)
             concated_sym = torch.cat((symbol, qenc_reshape), -1)
             concated_sym = self._gated_tanh(concated_sym, self.gt_W_sy_att, self.gt_W_prime_sy_att)
