@@ -213,6 +213,7 @@ def train(args, tb_writer):
         model.load_state_dict(ckpt['state_dict'])
         optimizer.load_state_dict(ckpt['optimizer'])
 
+
     # Training script
     print ('Start training.')
     for ep in range(args.ep):
@@ -251,10 +252,11 @@ def train(args, tb_writer):
             ep_zeros += zeros
             ep_total += oix.numel()
             smop = F.softmax(output).data.cpu().numpy()
+            lbcpu = label_batch.data.cpu().numpy()
             for v, ix in enumerate(img_indices):
                 if ix not in all_preds:
                     all_preds[ix] = {'p': [], 'gt': []}
-                all_preds[ix]['gt'].append(label_batch[v].data.cpu().numpy())
+                all_preds[ix]['gt'].append(lbcpu[v])
                 all_preds[ix]['p'].append(smop[v, 1])
             if step % 2 == 0 and step > 0:
                 tqdm.tqdm.write('Epoch %02d(%03d/%03d), loss: %.3f, correct: %3d / %d (%.2f%%), zeros: %.3f%%' %
@@ -264,7 +266,7 @@ def train(args, tb_writer):
                 ep_total = 0.
 
             # write accuracy and loss to tensorboard
-            total_batch_count = ep *  loader.n_batches + step
+            total_batch_count = ep * loader.n_batches + step
             acc_perc = correct / args.bsize
             tb_writer.add_scalar('train/loss', loss.data[0], total_batch_count)
             tb_writer.add_scalar('train/acc', acc_perc, total_batch_count)
