@@ -257,7 +257,7 @@ def train(args, tb_writer):
                 continue
             maxpred = np.argmax(_preds)
             valat = _gt[maxpred]
-            total_right += (valat > 0)[0]
+            total_right += valat #  (valat > 0)[0]
             total += 1.
         print("Accuracy: {:%} ({} {})".format(total_right / total, float(total_right), float(total)))
         tb_writer.add_scalar('train/perc', float(total_right / total), ep)
