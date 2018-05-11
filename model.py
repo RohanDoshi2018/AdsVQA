@@ -85,7 +85,7 @@ class Model(nn.Module):
         image -> shape (batch, K, feat_dim)
         """
         # question encoding
-        bsize = question.shape[0]
+        bsize = question.size(0)
         emb = self.wembed(question)                 # (batch, seqlen, emb_dim)
         enc, hid = self.gru(emb.permute(1, 0, 2))   # (seqlen, batch, hid_dim)
         qenc = enc[-1]                              # (batch, hid_dim)

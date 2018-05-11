@@ -59,7 +59,7 @@ def test(args, tb_writer):
                   K=loader.K,
                   feat_dim=loader.feat_dim,
                   hid_dim=args.hid,
-                  out_dim=2, # TODO: get rid of loader.n_answers
+                  out_dim=2,
                   pretrained_wemb=loader.pretrained_wemb,
                   symstream=args.sym,
                   noatt=args.noatt)
@@ -80,9 +80,10 @@ def test(args, tb_writer):
         q_batch, i_batch, s_batch, label_batch, img_indices = loader.next_batch()
     # result = []
 
-    mem = load_cache_obj('val_dict')
+    val_dict = load_cache_obj('val_dict')
+    num_right = 0
 
-    for i, ad_data in mem.items():
+    for i, ad_data in val_dict.items():
         
         query_batch = []
         img_feat_batch = []
@@ -92,9 +93,9 @@ def test(args, tb_writer):
         img_feat = ad_data['img_feat']
         symbol_feat = ad_data['symbol_feat']
 
-        for i in range(15):
+        for j in range(15):
             # question batch
-            q = ad_data['query'][i]
+            q = ad_data['query'][j]
             query_batch.append(q)
 
             # image batch
@@ -104,7 +105,7 @@ def test(args, tb_writer):
             symbol_feat_batch.append(symbol_feat) 
 
             # label batch
-            label = ad_data['score'][i]
+            label = ad_data['score'][j]
             label_batch.append(label)
 
         q_batch = np.asarray(query_batch)   # (batch, seqlen)
@@ -120,7 +121,7 @@ def test(args, tb_writer):
         q_batch, i_batch, s_batch, label_batch = q_batch.cuda(), i_batch.cuda(), s_batch.cuda(), label_batch.cuda()
 
         # Do one model forward and optimize
-        import pdb; pdb.set_trace()
+        # import pdb; pdb.set_trace()
 
         output = model(q_batch, i_batch, s_batch)
         # loss = loss_func(output, label_batch)
@@ -128,8 +129,22 @@ def test(args, tb_writer):
         # Calculate accuracy and loss
         confidence, pred_label = output.data.max(1)
 
+        max_conf, max_conf_idx = torch.max(confidence, 0)
+
+        pos_idx_pred = max_conf_idx.cpu().numpy()[0]
+        pos_idx_true =  np.where(np.array(ad_data['score']) == 1)[0]
+
+        if pos_idx_pred in pos_idx_true:
+            num_right += 1
+
+    # import pdb; pdb.set_trace()
+
+    acc = num_right / len(val_dict.keys())
+    print("num right / total: %d / %d" % (num_right, len(val_dict.keys())))
+    print("accuracy: %s" % acc)
+
         # TODO: find row with max score and take the prediction
-        import pdb; pdb.set_trace()
+        # import pdb; pdb.set_trace()
 
         # # TODO: fix this
         # _, ix = output.data.max(1)
