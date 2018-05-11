@@ -111,7 +111,6 @@ def test(args, tb_writer):
         label_batch = np.asarray(label_batch)
 
         # Cast to Variable
->>>>>>> 533263a5d7605cb58aec245ad4b76283dab46bfc
         q_batch = Variable(torch.from_numpy(q_batch))
         i_batch = Variable(torch.from_numpy(i_batch))
         s_batch = Variable(torch.from_numpy(s_batch))
