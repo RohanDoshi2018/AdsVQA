@@ -44,11 +44,16 @@ class Data_loader:
                 img_feat = np.load(img_filepath)['feat'][()]
                 img_feat = np.concatenate([v for v in img_feat.values()], axis=0)
 
+                symbol_filepath = osp.join('/opt/visualai/ads/symbol_features/', img_feat_fname)
+                symbol_feat = np.load(symbol_filepath)['feat'][()]
+                symbol_feat = np.concatenate([v for v in symbol_feat.values()], axis=0)
+
                 for annotation in pos:
                     self.mem[mem_counter] = {
                         'query': annotation,
                         'img_fname_prefix': img_fname_prefix, # TODO: used?
                         'img_feat': img_feat,
+                        'symbol_feat': symbol_feat,
                         'score': 1
                     }
                     mem_counter += 1
@@ -58,6 +63,7 @@ class Data_loader:
                         'query': annotation,
                         'img_fname_prefix': img_fname_prefix, # TODO: used?
                         'img_feat': img_feat,
+                        'symbol_feat': symbol_feat,
                         'score': 0,
                     }
                     mem_counter += 1
@@ -110,7 +116,7 @@ class Data_loader:
 
         query_batch = []
         img_feat_batch = []
-        # TODO: add symbol_feat_batch
+        symbol_feat_batch = []
         label_batch = []
 
 
@@ -131,6 +137,10 @@ class Data_loader:
             img_feat = self.mem[self.batch_ptr + b]['img_feat']
             img_feat_batch.append(img_feat) 
 
+            # symbol batch
+            symbol_feat = self.mem[self.batch_ptr + b]['symbol_feat']
+            symbol_feat_batch.append(symbol_feat) 
+
             # label batch
             label = self.mem[self.batch_ptr + b]['score']
             label_batch.append(label)
@@ -138,6 +148,7 @@ class Data_loader:
         self.batch_ptr += self.bsize
         query_batch = np.asarray(query_batch)   # (batch, seqlen)
         img_feat_batch = np.asarray(img_feat_batch)   # (batch, K, feat_dim)
+        symbol_feat_batch = np.asarray(symbol_feat_batch)   # (batch, K, feat_dim)
         label_batch = np.asarray(label_batch)
 
-        return query_batch, img_feat_batch, label_batch
+        return query_batch, img_feat_batch, symbol_feat_batch, label_batch

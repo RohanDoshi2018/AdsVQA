@@ -52,7 +52,7 @@ class Model(nn.Module):
         # initialize word embedding layer weight
         self.wembed.weight.data.copy_(torch.from_numpy(pretrained_wemb))
 
-    def forward(self, question, image):
+    def forward(self, question, image, symbol):
         """
         question -> shape (batch, seqlen)
         image -> shape (batch, K, feat_dim)

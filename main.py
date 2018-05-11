@@ -122,14 +122,15 @@ def train(args, tb_writer):
         ep_correct = 0
         for step in range(loader.n_batches):
             # Batch preparation
-            q_batch, i_batch, label_batch = loader.next_batch()
+            q_batch, i_batch, s_batch, label_batch = loader.next_batch()
             q_batch = Variable(torch.from_numpy(q_batch))
             i_batch = Variable(torch.from_numpy(i_batch))
+            s_batch = Variable(torch.from_numpy(s_batch))
             label_batch = Variable(torch.from_numpy(label_batch))
-            q_batch, i_batch, label_batch = q_batch.cuda(), i_batch.cuda(), label_batch.cuda()
+            q_batch, i_batch, s_batch, label_batch = q_batch.cuda(), i_batch.cuda(), s_batch.cuda(), label_batch.cuda()
 
             # Do model forward
-            output = model(q_batch, i_batch)
+            output = model(q_batch, i_batch, s_batch)
             loss = loss_func(output, label_batch)
 
             # Calculate accuracy and loss
