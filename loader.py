@@ -30,7 +30,10 @@ class Data_loader:
         #         text_annotations = json.load(f)
 
         # {q_id: {'query': <Action-Reason string, 'img_id':<img_id>, 'img_feat': <np.array>,'score': <0/1>}}
-        self.mem = load_cache_obj('train_dict')
+        if train:
+            self.mem = load_cache_obj('train_dict')
+        else:
+            self.mem = load_cache_obj('val_dict')            
         # mem_counter = 0
 
         # for img_fname, annotations in text_annotations.items():
@@ -117,13 +120,14 @@ class Data_loader:
         image feature -> (batch, K, feat_dim)
         label -> (batch); 0 or 1 scalar
         """
-        if self.batch_ptr + self.bsize >= self.n_queries:
-            self.epoch_reset()
 
         query_batch = []
         img_feat_batch = []
         symbol_feat_batch = []
         label_batch = []
+
+        if self.batch_ptr + self.bsize >= self.n_queries:
+            self.epoch_reset()
 
         for b in range(self.bsize):
             # question batch
