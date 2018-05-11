@@ -12,7 +12,8 @@ import torch.nn.functional as F
 class Model(nn.Module):
 
     def __init__(self, vocab_size, emb_dim, K, feat_dim,
-                 hid_dim, out_dim, pretrained_wemb, symstream=False):
+                 hid_dim, out_dim, pretrained_wemb, symstream=False,
+                 noatt=False):
         super(Model, self).__init__()
         """
         Args:
@@ -31,6 +32,20 @@ class Model(nn.Module):
         self.hid_dim = hid_dim
         self.out_dim = out_dim
         self.symstream = symstream
+
+        # question encoding
+        self.wembed = nn.Embedding(vocab_size, emb_dim)
+        self.gru = nn.GRU(emb_dim, hid_dim)
+        
+        # Opt for simpler, concat then predict (reduces feature dimensionality first)
+        self.noatt = noatt
+        if noatt:
+            self.sym_conv_1x1 = nn.Conv2d(feat_dim, hid_dim, 1)
+            self.img_conv_1x1 = nn.Conv2d(feat_dim, hid_dim, 1)
+            hid_dim_noatt = hid_dim * K * (symstream + 1) + hid_dim
+            self.clf_w = nn.Linear(hid_dim_noatt, out_dim)
+            return
+
         # gated tanh activation
         self.gt_W_img_att = nn.Linear(feat_dim + hid_dim, hid_dim)
         self.gt_W_prime_img_att = nn.Linear(feat_dim + hid_dim, hid_dim)
@@ -49,10 +64,6 @@ class Model(nn.Module):
             self.gt_W_prime_sy = nn.Linear(feat_dim, hid_dim)
             self.gt_W_question_sy = nn.Linear(hid_dim, hid_dim)
             self.gt_W_prime_question_sy = nn.Linear(hid_dim, hid_dim)
-
-        # question encoding
-        self.wembed = nn.Embedding(vocab_size, emb_dim)
-        self.gru = nn.GRU(emb_dim, hid_dim)
 
         # image attention
         self.att_wa = nn.Linear(hid_dim, 1)
@@ -74,9 +85,21 @@ class Model(nn.Module):
         image -> shape (batch, K, feat_dim)
         """
         # question encoding
+        bsize = question.shape[0]
         emb = self.wembed(question)                 # (batch, seqlen, emb_dim)
         enc, hid = self.gru(emb.permute(1, 0, 2))   # (seqlen, batch, hid_dim)
         qenc = enc[-1]                              # (batch, hid_dim)
+        if self.noatt:
+            image = F.normalize(image.float(), -1).permute(0, 2, 1).unsqueeze(-1)
+            image = self.img_conv_1x1(image).squeeze().permute(0, 2, 1)
+            if self.symstream:
+                symbol = F.normalize(symbol.float(), -1).permute(0, 2, 1).unsqueeze(-1)
+                symbol = self.sym_conv_1x1(symbol).squeeze().permute(0, 2, 1)
+                concat = torch.cat((qenc.unsqueeze(1), image, symbol), 1).view(bsize, -1)
+            else:
+                concat = torch.cat((qenc.unsqueeze(1), image), -1).view(bsize, -1)
+            s_head = self.clf_w(concat) 
+            return s_head
 
         # image encoding
         image = F.normalize(image.float(), -1)  # (batch, K, feat_dim)

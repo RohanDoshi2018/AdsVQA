@@ -60,7 +60,9 @@ def test(args, tb_writer):
                   feat_dim=loader.feat_dim,
                   hid_dim=args.hid,
                   out_dim=2, # TODO: get rid of loader.n_answers
-                  pretrained_wemb=loader.pretrained_wemb)
+                  pretrained_wemb=loader.pretrained_wemb,
+                  symstream=args.sym,
+                  noatt=args.noatt)
 
     model = model.cuda()
 
@@ -161,7 +163,9 @@ def train(args, tb_writer):
                   feat_dim=loader.feat_dim,
                   hid_dim=args.hid,
                   out_dim=2,
-                  pretrained_wemb=loader.pretrained_wemb)
+                  pretrained_wemb=loader.pretrained_wemb,
+                  symstream=args.sym,
+                  noatt=args.noatt)
 
     model.apply(weights_init)
 
@@ -243,8 +247,6 @@ def train(args, tb_writer):
         print("")
         total_right = 0.
         total = 0.
-        # import pdb
-        # pdb.set_trace()
         for ix, dat in all_preds.items():
             _preds = dat['p']
             _gt = dat['gt']
@@ -252,9 +254,10 @@ def train(args, tb_writer):
                 continue
             maxpred = np.argmax(_preds)
             valat = _gt[maxpred]
-            total_right += valat
+            total_right += (valat > 0)[0]
             total += 1.
-        print("Accuracy: {:%} ({} {})".format(total_right / total, total_right, total))
+        print("Accuracy: {:%} ({} {})".format(total_right / total, float(total_right), float(total)))
+        tb_writer.add_scalar('train/perc', float(total_right / total), ep)
             
         all_preds = {}
         # Save model after every epoch
@@ -265,7 +268,13 @@ def train(args, tb_writer):
             'state_dict': model.state_dict(),
             'optimizer': optimizer.state_dict()
         }
-        torch.save(tbs, 'save/model-' + str(ep+1) + '.pth.tar')
+        savebase = 'save/model-sym-'
+        if args.sym:
+            savebase += 'sym-'
+        if args.noatt:
+            savebase += 'noatt-'
+        torch.save(tbs, savebase + str(ep+1) + '.pth.tar')
+        # torch.save(tbs, 'save/model-sym-' + str(ep+1) + '.pth.tar')
         print ('Epoch %02d done, average loss: %.3f, average accuracy: %.2f%%' % (ep+1, ep_loss / loader.n_batches, ep_correct * 100 / (loader.n_batches * args.bsize)))
 
 
@@ -297,6 +306,7 @@ if __name__ == '__main__':
     parser.add_argument('--tb_dir', metavar='', type=str, default='data/ads/tb', help='path to tb directory')
     parser.add_argument('--sym', metavar='', type=bool, default=False, help='symbolic stream toggle')
     parser.add_argument('--gpu', metavar='', type=int, default=0, help='gpu number')
+    parser.add_argument('--noatt', metavar='', type=bool, default=False, help='Removes the attention component of the model')
 
 
     args, unparsed = parser.parse_known_args()
