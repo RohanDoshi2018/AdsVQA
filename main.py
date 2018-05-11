@@ -43,9 +43,8 @@ def test(args, tb_writer):
                   K=loader.K,
                   feat_dim=loader.feat_dim,
                   hid_dim=args.hid,
-                  out_dim=loader.n_answers,  # TODO: get rid of loader.n_answers
-                  pretrained_wemb=loader.pretrained_wemb,
-                  symstream=args.sym)
+                  out_dim=loader.n_answers, # TODO: get rid of loader.n_answers
+                  pretrained_wemb=loader.pretrained_wemb)
 
     model = model.cuda()
 
@@ -59,10 +58,12 @@ def test(args, tb_writer):
     result = []
     for step in range(loader.n_batches):
         # Batch preparation
-        q_batch, i_batch, label_batch = loader.next_batch()
+        q_batch, i_batch, s_batch, label_batch = loader.next_batch()
         q_batch = Variable(torch.from_numpy(q_batch))
         i_batch = Variable(torch.from_numpy(i_batch))
-        q_batch, i_batch, label_batch = q_batch.cuda(), i_batch.cuda(), label_batch.cuda()
+        s_batch = Variable(torch.from_numpy(s_batch))
+        label_batch = Variable(torch.from_numpy(label_batch))
+        q_batch, i_batch, s_batch, label_batch = q_batch.cuda(), i_batch.cuda(), s_batch.cuda(), label_batch.cuda()
 
         # Do one model forward and optimize
         output = model(q_batch, i_batch)
@@ -99,8 +100,7 @@ def train(args, tb_writer):
                   feat_dim=loader.feat_dim,
                   hid_dim=args.hid,
                   out_dim=2,
-                  pretrained_wemb=loader.pretrained_wemb, 
-                  symstream=args.sym)
+                  pretrained_wemb=loader.pretrained_wemb)
 
     loss_func = nn.BCELoss()
     
@@ -122,8 +122,6 @@ def train(args, tb_writer):
     for ep in range(args.ep):
         ep_loss = 0
         ep_correct = 0
-        ep_zeros = 0.
-        ep_total = 0.
         for step in range(loader.n_batches):
             # Batch preparation
             q_batch, i_batch, s_batch, label_batch = loader.next_batch()
@@ -135,32 +133,23 @@ def train(args, tb_writer):
 
             # Do model forward
             output = model(q_batch, i_batch, s_batch)
-
-            logits = output[:, 1]
-            loss = loss_func(logits.squeeze(), label_batch.float())
+            loss = loss_func(output, label_batch)
 
             # Calculate accuracy and loss
             _, oix = output.data.max(1)
-            # aix = a_batch.data
-            aix = label_batch.data
+            aix = a_batch.data
             correct = torch.eq(oix, aix).sum()
             ep_correct += correct
             ep_loss += loss.data[0]
-            zeros = (oix == 0).long().sum()
-            ep_zeros += zeros
-            ep_total += oix.numel()
-            if step % 40 == 0 and step > 0:
-                print ('Epoch %02d(%03d/%03d), loss: %.3f, correct: %3d / %d (%.2f%%), zeros: %.3f%%' %
-                        (ep+1, step, loader.n_batches, loss.data[0], correct, args.bsize, correct * 100 / args.bsize,
-                            ep_zeros * 100. / ep_total))
-                ep_zeros = 0.
-                ep_total = 0.
+            if step % 40 == 0:
+                print ('Epoch %02d(%03d/%03d), loss: %.3f, correct: %3d / %d (%.2f%%)' %
+                        (ep+1, step, loader.n_batches, loss.data[0], correct, args.bsize, correct * 100 / args.bsize))
 
             # write accuracy and loss to tensorboard
             total_batch_count = ep *  loader.n_batches + step
             acc_perc = correct / args.bsize
-            tb_writer.add_scalar('train/loss', loss.data[0], total_batch_count)
-            tb_writer.add_scalar('train/acc', acc_perc, total_batch_count)
+            self.tb_writer.add_scalar('train/loss', loss.data[0], total_batch_count)
+            self.tb_writer.add_scalar('train/acc', acc_perc, total_batch_count)
 
             # compute gradient and do optim step
             optimizer.zero_grad()
@@ -201,7 +190,6 @@ if __name__ == '__main__':
     parser.add_argument('--modelpath', metavar='', type=str, default=None, help='trained model path.')
     parser.add_argument('--name', metavar='', type=str, default=None, help='name of tb run')
     parser.add_argument('--tb_dir', metavar='', type=str, default='data/ads/tb', help='path to tb directory')
-    parser.add_argument('--sym', metavar='', type=bool, default=True, help='Whether or not to include the symbol stream.')
 
     args, unparsed = parser.parse_known_args()
     if len(unparsed) != 0: raise SystemExit('Unknown argument: {}'.format(unparsed))
@@ -210,8 +198,7 @@ if __name__ == '__main__':
     tb_writer = SummaryWriter(tb_path)
 
     # tb_writer.add_text('main/test', 'Hello World')
-    print("Args:")
-    print(args)
+
     if args.train:
         train(args, tb_writer)
     if args.eval:

@@ -127,22 +127,8 @@ class Data_loader:
 
         for b in range(self.bsize):
             # question batch
-            q = [0] * self.seqlen
-            for i, w in enumerate(self.mem[self.batch_ptr + b]['query'].split(' ')):
-                if i >= self.seqlen:
-                    break
-
-
-
-                try:
-                    w = spell(w.lower())
-
-                    q[i] = self.wtoi[w]
-                except:
-                    q[i] = 0    # validation questions may contain unseen word
+            q = self.mem[self.batch_ptr + b]['query']
             query_batch.append(q)
-
-            import pdb; pdb.set_trace()
             
             # image batch
             img_feat = self.mem[self.batch_ptr + b]['img_feat']
@@ -161,6 +147,8 @@ class Data_loader:
         img_feat_batch = np.asarray(img_feat_batch)   # (batch, K, feat_dim)
         symbol_feat_batch = np.asarray(symbol_feat_batch)   # (batch, K, feat_dim)
         label_batch = np.asarray(label_batch)
+
+        import pdb; pdb.set_trace()
 
         return query_batch, img_feat_batch, symbol_feat_batch, label_batch
 
