@@ -97,7 +97,7 @@ class Model(nn.Module):
                 symbol = self.sym_conv_1x1(symbol).squeeze().permute(0, 2, 1)
                 concat = torch.cat((qenc.unsqueeze(1), image, symbol), 1).view(bsize, -1)
             else:
-                concat = torch.cat((qenc.unsqueeze(1), image), -1).view(bsize, -1)
+                concat = torch.cat((qenc.unsqueeze(1), image), 1).view(bsize, -1)
             s_head = self.clf_w(concat) 
             return s_head
 

@@ -49,7 +49,7 @@ def weights_init(m):
         m.weight.data.normal_(1.0, 0.02)
         m.bias.data.fill_(0)
 
-def test(args, tb_writer):
+def test(args, tb_writer, model=None, ep=0):
     # Some preparation
     torch.manual_seed(1000)
     if torch.cuda.is_available():
@@ -61,32 +61,33 @@ def test(args, tb_writer):
     loader = Data_loader(15, args.emb, train=False)
     print ('Parameters:\n\tvocab size: %d\n\tembedding dim: %d\n\tK: %d\n\tfeature dim: %d\
             \n\thidden dim: %d' % (loader.vocab_size, args.emb, loader.K, loader.feat_dim, args.hid))
-
-    model = Model(vocab_size=loader.vocab_size,
-                  emb_dim=args.emb,
-                  K=loader.K,
-                  feat_dim=loader.feat_dim,
-                  hid_dim=args.hid,
-                  out_dim=2,
-                  pretrained_wemb=loader.pretrained_wemb,
-                  symstream=args.sym,
-                  noatt=args.noatt)
-
-    model = model.cuda()
-
-    if args.modelpath and os.path.isfile(args.modelpath):
-        print ('Resuming from checkpoint %s' % (args.modelpath))
-        ckpt = torch.load(args.modelpath)
-        model.load_state_dict(ckpt['state_dict'])
+    if model is not None:
+        model = model
     else:
-        print(args.modelpath)
-        raise SystemExit('Need to provide model path.')
+        model = Model(vocab_size=loader.vocab_size,
+                      emb_dim=args.emb,
+                      K=loader.K,
+                      feat_dim=loader.feat_dim,
+                      hid_dim=args.hid,
+                      out_dim=2,
+                      pretrained_wemb=loader.pretrained_wemb,
+                      symstream=args.sym,
+                      noatt=args.noatt)
+
+        model = model.cuda()
+
+        if args.modelpath and os.path.isfile(args.modelpath):
+            print ('Resuming from checkpoint %s' % (args.modelpath))
+            ckpt = torch.load(args.modelpath)
+            model.load_state_dict(ckpt['state_dict'])
+        else:
+            print(args.modelpath)
+            raise SystemExit('Need to provide model path.')
 
     val_dict = load_cache_obj('val_dict')
     num_right = 0
 
-    for i, ad_data in val_dict.items():
-        
+    for i, ad_data in tqdm.tqdm(val_dict.items()):
         query_batch = []
         img_feat_batch = []
         symbol_feat_batch = []
@@ -136,6 +137,7 @@ def test(args, tb_writer):
     acc = num_right / len(val_dict.keys())
     print("num right / total: %d / %d" % (num_right, len(val_dict.keys())))
     print("accuracy: %s" % acc)
+    tb_writer.add_scalar('val/accuracy', acc, ep)
 
     print ('Validation done')
 
@@ -257,7 +259,7 @@ def train(args, tb_writer):
                 continue
             maxpred = np.argmax(_preds)
             valat = _gt[maxpred]
-            total_right += valat #  (valat > 0)[0]
+            total_right += valat  #  (valat > 0)[0]
             total += 1.
         print("Accuracy: {:%} ({} {})".format(total_right / total, float(total_right), float(total)))
         tb_writer.add_scalar('train/perc', float(total_right / total), ep)
@@ -303,7 +305,7 @@ def train(args, tb_writer):
             'state_dict': model.state_dict(),
             'optimizer': optimizer.state_dict()
         }
-        savebase = 'save/model-sym-'
+        savebase = 'data/ads/save/model-'
         if args.sym:
             savebase += 'sym-'
         if args.noatt:
@@ -311,6 +313,7 @@ def train(args, tb_writer):
         torch.save(tbs, savebase + str(ep+1) + '.pth.tar')
         # torch.save(tbs, 'save/model-sym-' + str(ep+1) + '.pth.tar')
         print ('Epoch %02d done, average loss: %.3f, average accuracy: %.2f%%' % (ep+1, ep_loss / loader.n_batches, ep_correct * 100 / (loader.n_batches * args.bsize)))
+        test(args, tb_writer, model, ep)
 
 
 def load_cache_obj(name ):
@@ -322,7 +325,7 @@ def get_tb_path(tb_dir, name):
         os.makedirs(tb_dir)
     run_name = ''
     if name:
-        run_name += run_name
+        run_name += name
     now = datetime.now(pytz.timezone('US/Eastern'))
     run_name += '_%s' % now.strftime('%Y%m%d-%H%M%S')
     return osp.join(tb_dir, run_name)
