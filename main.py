@@ -49,9 +49,6 @@ def weights_init(m):
         m.weight.data.normal_(1.0, 0.02)
         m.bias.data.fill_(0)
 
-
-# TODO: NEED TO REWRITE to go through 15 choices
-# TODO: NEED special data_loader mods for test
 def test(args, tb_writer):
     # Some preparation
     torch.manual_seed(1000)
@@ -85,12 +82,6 @@ def test(args, tb_writer):
         print(args.modelpath)
         raise SystemExit('Need to provide model path.')
 
-    result = []
-    for step in range(loader.n_batches):
-        # Batch preparation
-        q_batch, i_batch, s_batch, label_batch, img_indices = loader.next_batch()
-    # result = []
-
     val_dict = load_cache_obj('val_dict')
     num_right = 0
 
@@ -122,24 +113,18 @@ def test(args, tb_writer):
         q_batch = np.asarray(query_batch)   # (batch, seqlen)
         i_batch = np.asarray(img_feat_batch)   # (batch, K, feat_dim)
         s_batch = np.asarray(symbol_feat_batch)   # (batch, K, feat_dim)
-        label_batch = np.asarray(label_batch)
+        l_batch = np.asarray(label_batch)
 
         # Cast to Variable
         q_batch = Variable(torch.from_numpy(q_batch))
         i_batch = Variable(torch.from_numpy(i_batch))
         s_batch = Variable(torch.from_numpy(s_batch))
-        label_batch = Variable(torch.from_numpy(label_batch))
-        q_batch, i_batch, s_batch, label_batch = q_batch.cuda(), i_batch.cuda(), s_batch.cuda(), label_batch.cuda()
-
-        # Do one model forward and optimize
-        # import pdb; pdb.set_trace()
+        l_batch = Variable(torch.from_numpy(l_batch))
+        q_batch, i_batch, s_batch, l_batch = q_batch.cuda(), i_batch.cuda(), s_batch.cuda(), l_batch.cuda()
 
         output = model(q_batch, i_batch, s_batch)
-        # loss = loss_func(output, label_batch)
 
-        # Calculate accuracy and loss
         confidence, pred_label = output.data.max(1)
-
         max_conf, max_conf_idx = torch.max(confidence, 0)
 
         pos_idx_pred = max_conf_idx.cpu().numpy()[0]
@@ -148,24 +133,10 @@ def test(args, tb_writer):
         if pos_idx_pred in pos_idx_true:
             num_right += 1
 
-    # import pdb; pdb.set_trace()
-
     acc = num_right / len(val_dict.keys())
     print("num right / total: %d / %d" % (num_right, len(val_dict.keys())))
     print("accuracy: %s" % acc)
 
-        # TODO: find row with max score and take the prediction
-        # import pdb; pdb.set_trace()
-
-        # # TODO: fix this
-        # _, ix = output.data.max(1)
-        # for i, qid in enumerate(a_batch):
-        #     result.append({
-        #         'question_id': qid,
-        #         'answer': loader.a_itow[ix[i]]
-        #     })
-
-    # json.dump(result, open('result.json', 'w'))
     print ('Validation done')
 
 def train(args, tb_writer):
