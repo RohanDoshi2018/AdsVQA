@@ -8,7 +8,6 @@ import os
 import os.path as osp
 import pdb
 import pytz
-import tqdm
 
 import numpy as np
 import torch
@@ -123,13 +122,7 @@ def train(args, tb_writer):
     for ep in range(args.ep):
         ep_loss = 0
         ep_correct = 0
-<<<<<<< HEAD
         for step in range(loader.n_batches):
-=======
-        ep_zeros = 0.
-        ep_total = 0.
-        for step in tqdm.tqdm(range(loader.n_batches)):
->>>>>>> 6f4e0cd363605d5688770c4658f35ec2b62748aa
             # Batch preparation
             q_batch, i_batch, s_batch, label_batch = loader.next_batch()
             q_batch = Variable(torch.from_numpy(q_batch))
@@ -148,21 +141,9 @@ def train(args, tb_writer):
             correct = torch.eq(oix, aix).sum()
             ep_correct += correct
             ep_loss += loss.data[0]
-<<<<<<< HEAD
             if step % 40 == 0:
                 print ('Epoch %02d(%03d/%03d), loss: %.3f, correct: %3d / %d (%.2f%%)' %
                         (ep+1, step, loader.n_batches, loss.data[0], correct, args.bsize, correct * 100 / args.bsize))
-=======
-            zeros = (oix == 0).long().sum()
-            ep_zeros += zeros
-            ep_total += oix.numel()
-            if step % 40 == 0 and step > 0:
-                tqdm.tqdm.write('Epoch %02d(%03d/%03d), loss: %.3f, correct: %3d / %d (%.2f%%), zeros: %.3f%%' %
-                        (ep+1, step, loader.n_batches, loss.data[0], correct, args.bsize, correct * 100 / args.bsize,
-                            ep_zeros * 100. / ep_total))
-                ep_zeros = 0.
-                ep_total = 0.
->>>>>>> 6f4e0cd363605d5688770c4658f35ec2b62748aa
 
             # write accuracy and loss to tensorboard
             total_batch_count = ep *  loader.n_batches + step
