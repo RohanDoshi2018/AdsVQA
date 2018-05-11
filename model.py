@@ -66,7 +66,10 @@ class Model(nn.Module):
         image = F.normalize(image, -1)  # (batch, K, feat_dim)
 
         # image attention
-        qenc_reshape = qenc.repeat(1, self.K).view(-1, self.K, self.hid_dim)    # (batch, K, hid_dim)
+        qenc_reshape = qenc.repeat(1, self.K).view(-1, self.K, self.hid_dim).double()    # (batch, K, hid_dim) # TODO: change this cast to double??
+        
+        import pdb; pdb.set_trace()
+
         concated = torch.cat((image, qenc_reshape), -1)                         # (batch, K, feat_dim + hid_dim)
         concated = self._gated_tanh(concated, self.gt_W_img_att, self.gt_W_prime_img_att)   # (batch, K, hid_dim)
 

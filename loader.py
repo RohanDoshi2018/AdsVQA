@@ -70,7 +70,6 @@ class Data_loader:
         self.n_batches = self.n_queries // self.bsize
         self.K = 100 # hard-coded for now
         self.feat_dim = 1024  # hard-coded for now
-
         self.init_pretrained_wemb(emb_dim)
         self.epoch_reset()
 
@@ -88,7 +87,7 @@ class Data_loader:
 
         self.itow, self.wtoi = {}, {}
         self.vocab_size = len(embeddings_lookup.keys())
-        self.pretrained_wemb = np.zeros((self.vocab_size, emb_dim), dtype=np.float32)    
+        self.pretrained_wemb = np.zeros((self.vocab_size, emb_dim))    
         for i, word in enumerate(embeddings_lookup.keys()):
             embedding_v = embeddings_lookup.get(word)
             if embedding_v is not None:
@@ -140,7 +139,5 @@ class Data_loader:
         query_batch = np.asarray(query_batch)   # (batch, seqlen)
         img_feat_batch = np.asarray(img_feat_batch)   # (batch, K, feat_dim)
         label_batch = np.asarray(label_batch)
-
-        import pdb; pdb.set_trace()
 
         return query_batch, img_feat_batch, label_batch
