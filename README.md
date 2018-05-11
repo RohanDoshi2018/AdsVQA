@@ -50,7 +50,7 @@ python main.py
 
 ## Evaluate
 ```bash
-python main.py --modelpath 'data/ads/save/model-sym-10.pth.tar' --eval --gpu 2
+python main.py --modelpath 'data/ads/save/model-sym-10.pth.tar' --eval --gpu 2 --sym True
 
 ```
 This will generate `result.json` (validation set only), format is referred to [vqa evaluation format](http://www.visualqa.org/evaluation.html). 
