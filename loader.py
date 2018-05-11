@@ -8,6 +8,8 @@ import pickle
 
 import numpy as np
 
+from autocorrect import spell
+
 class Data_loader:
     def __init__(self, batch_size=512, emb_dim=300, train=True):
         self.bsize = batch_size
@@ -126,16 +128,22 @@ class Data_loader:
         for b in range(self.bsize):
             # question batch
             q = [0] * self.seqlen
-            for i, w in enumerate(self.mem[self.batch_ptr + b]['query']):
+            for i, w in enumerate(self.mem[self.batch_ptr + b]['query'].split(' ')):
                 if i >= self.seqlen:
                     break
 
+
+
                 try:
+                    w = spell(w.lower())
+
                     q[i] = self.wtoi[w]
                 except:
                     q[i] = 0    # validation questions may contain unseen word
             query_batch.append(q)
 
+            import pdb; pdb.set_trace()
+            
             # image batch
             img_feat = self.mem[self.batch_ptr + b]['img_feat']
             img_feat_batch.append(img_feat) 
