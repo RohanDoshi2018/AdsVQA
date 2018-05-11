@@ -22,6 +22,14 @@ from torch.autograd import Variable
 from loader import Data_loader
 from model import Model
 
+def weights_init(m):
+    classname = m.__class__.__name__
+    if classname.find('Conv') != -1:
+        m.weight.data.normal_(0.0, 0.02)
+    elif classname.find('BatchNorm') != -1:
+        m.weight.data.normal_(1.0, 0.02)
+        m.bias.data.fill_(0)
+
 
 # TODO: NEED TO REWRITE to go through 15 choices
 # TODO: NEED special data_loader mods for test
@@ -103,7 +111,11 @@ def train(args, tb_writer):
                   pretrained_wemb=loader.pretrained_wemb, 
                   symstream=args.sym)
 
-    loss_func = nn.BCELoss()
+    model.apply(weights_init)
+
+    # loss_func = nn.BCELoss()
+    weight = torch.Tensor([3./18., 1])
+    loss_func = nn.CrossEntropyLoss(weight=weight)
     
     # Move it to GPU
     model = model.cuda()
@@ -137,9 +149,9 @@ def train(args, tb_writer):
             # Do model forward
             output = model(q_batch, i_batch, s_batch)
 
-            logits = output[:, 1]
-            loss = loss_func(logits.squeeze(), label_batch.float())
-
+            # logits = output[:, 1]
+            # loss = loss_func(logits.squeeze(), label_batch.float())
+            loss = loss_func(output, label_batch.float())
             # Calculate accuracy and loss
             _, oix = output.data.max(1)
             # aix = a_batch.data
@@ -150,7 +162,7 @@ def train(args, tb_writer):
             zeros = (oix == 0).long().sum()
             ep_zeros += zeros
             ep_total += oix.numel()
-            if step % 40 == 0 and step > 0:
+            if step % 2 == 0 and step > 0:
                 tqdm.tqdm.write('Epoch %02d(%03d/%03d), loss: %.3f, correct: %3d / %d (%.2f%%), zeros: %.3f%%' %
                         (ep+1, step, loader.n_batches, loss.data[0], correct, args.bsize, correct * 100 / args.bsize,
                             ep_zeros * 100. / ep_total))

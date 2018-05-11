@@ -135,7 +135,7 @@ class Data_loader:
                     break
 
                 try:
-                    w = spell(w.lower())
+                    # w = spell(w.lower())
 
                     q[i] = self.wtoi[w]
                 except BaseException:
