@@ -87,69 +87,68 @@ class Model(nn.Module):
         emb = self.wembed(question)                 # (batch, seqlen, emb_dim)
         enc, hid = self.gru(emb.permute(1, 0, 2))   # (seqlen, batch, hid_dim)
         qenc = enc[-1]                              # (batch, hid_dim)
-
         image = F.normalize(image.float(), dim=-1)  # (batch, K, feat_dim)
+
+        # element-wise (question + image) multiplication
         q_head = self._gated_tanh(
             qenc,
             self.gt_W_question,
             self.gt_W_prime_question)
+
         if self.symstream:
             symbol = F.normalize(symbol.float(), dim=-1)
 
         if self.noatt:
             image = image.mean(dim=1)
             v_head = self._gated_tanh(image, self.gt_W_img, self.gt_W_prime_img)
-            # v_gat_head = torch.mul(v_head, q_head)
+            v_gat_head = torch.mul(v_head, q_head)
 
             if not self.symstream:
-                concat_vq = torch.cat((v_head, q_head), dim=1)
-                output = self.clf_w(concat_vq) 
+                output = self.clf_w(v_gat_head) 
                 return output
 
             symbol = symbol.mean(dim=1)
             s_head = self._gated_tanh(symbol, self.gt_W_sy, self.gt_W_prime_sy)
-            # s_gat_head = torch.mul(s_head, q_head)
-            concat_vqs = torch.cat((v_head, q_head, s_head), dim=1)
-            output = self.clf_w(concat_vqs)
+            s_gat_head = torch.mul(s_head, q_head)
+            concat = torch.cat((v_gat_head, s_gat_head), dim=1)  # .view(bsize, -1)
+            output = self.clf_w(concat)
             return output
 
-        else:
-            # image (v) encoding
-            qenc_reshape = qenc.repeat(1, self.K).view(-1, self.K, self.hid_dim)
-            # (batch, K, feat_dim + hid_dim)
-            concated = torch.cat((image, qenc_reshape), dim=-1)
-            concated = self._gated_tanh(
-                concated,
-                self.gt_W_img_att,
-                self.gt_W_prime_img_att)   # (batch, K, hid_dim)
+        # image encoding
+        qenc_reshape = qenc.repeat(1, self.K).view(-1, self.K, self.hid_dim)
+        # (batch, K, feat_dim + hid_dim)
+        concated = torch.cat((image, qenc_reshape), dim=-1)
+        concated = self._gated_tanh(
+            concated,
+            self.gt_W_img_att,
+            self.gt_W_prime_img_att)   # (batch, K, hid_dim)
 
-            a = self.att_wa(concated)                           # (batch, K, 1)
-            a = F.softmax(a.squeeze())                          # (batch, K)
-            v_head = torch.bmm(a.unsqueeze(1), image).squeeze()  # (batch, feat_dim)
-            v_head = self._gated_tanh(v_head, self.gt_W_img, self.gt_W_prime_img)
-            # v_gat_head = torch.mul(q_head, v_head)         # (batch, hid_dim)
+        a = self.att_wa(concated)                           # (batch, K, 1)
+        a = F.softmax(a.squeeze())                          # (batch, K)
+        v_head = torch.bmm(a.unsqueeze(1),
+                           image).squeeze()  # (batch, feat_dim)
+        v_head = self._gated_tanh(v_head, self.gt_W_img, self.gt_W_prime_img)
+        v_gat_head = torch.mul(q_head, v_head)         # (batch, hid_dim)
 
-            # Symbol attention
-            if not self.symstream:
-                concat_vq =  torch.cat((v_head, q_head), dim=1)
-                output = self.clf_w(concat_vq)
-                return output
-
+        # Symbol attention
+        if self.symstream:
             concated_sym = torch.cat((symbol, qenc_reshape), dim=-1)
             concated_sym = self._gated_tanh(
-                concated_sym, 
-                self.gt_W_sy_att, 
-                self.gt_W_prime_sy_att)
+                concated_sym, self.gt_W_sy_att, self.gt_W_prime_sy_att)
             a_sy = self.sy_att_wa(concated_sym)
             a_sy = F.softmax(a.squeeze())
             s_head = torch.bmm(a_sy.unsqueeze(1), symbol).squeeze()
-            s_head = self._gated_tanh(s_head, self.gt_W_sy, self.gt_W_prime_sy)
-            # s_gat_head = torch.mul(q_head, s_head)
 
-            # output classifier
-            concat_vqs = torch.cat((v_head, q_head, s_head), dim=1)
-            output = self.clf_w(concat_vqs)
-            return output               # (batch, out_dim)
+            s_head = self._gated_tanh(
+                s_head, self.gt_W_sy, self.gt_W_prime_sy)
+            s_gat_head = torch.mul(q_head, s_head)
+
+            output = self.clf_w(torch.cat((s_gat_head, v_gat_head), -1))
+            return output
+
+        # output classifier
+        output = self.clf_w(v_gat_head)
+        return output               # (batch, out_dim)
 
     def _gated_tanh(self, x, W, W_prime):
         """
