@@ -10,6 +10,7 @@ import io
 # import pdb
 import pytz
 
+import random
 import numpy as np
 import torch
 import torch.nn as nn
@@ -95,7 +96,9 @@ def test(args, tb_writer, model=None, ep=0):
 
         img_feat = ad_data['img_feat']
         symbol_feat = ad_data['symbol_feat']
-        for j in range(15):
+        inds = list(range(15))
+        random.shuffle(inds)
+        for j in inds:  # range(15):
             # question batch
             q = ad_data['query'][j]
             query_batch.append(q)
@@ -121,6 +124,7 @@ def test(args, tb_writer, model=None, ep=0):
         s_batch = Variable(torch.from_numpy(s_batch))
         l_batch = Variable(torch.from_numpy(l_batch))
         q_batch, i_batch, s_batch, l_batch = q_batch.cuda(), i_batch.cuda(), s_batch.cuda(), l_batch.cuda()
+        # import pdb; pdb.set_trace()
         output = model(q_batch, i_batch, s_batch)
         logits = F.softmax(output)
         logits = logits[:, 1].data
@@ -334,7 +338,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Winner of VQA 2.0 in CVPR\'17 Workshop')
     parser.add_argument('--train', action='store_true', help='set this to train.')
     parser.add_argument('--eval', action='store_true', help='set this to evaluate.')
-    parser.add_argument('--lr', metavar='', type=float, default=1e-4, help='initial learning rate')
+    parser.add_argument('--lr', metavar='', type=float, default=1e-3, help='initial learning rate')
     parser.add_argument('--ep', metavar='', type=int, default=50, help='number of epochs.')
     parser.add_argument('--bsize', metavar='', type=int, default=512, help='batch size.')
     parser.add_argument('--hid', metavar='', type=int, default=512, help='hidden dimension.')

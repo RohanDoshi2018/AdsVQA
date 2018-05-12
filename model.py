@@ -1,3 +1,5 @@
+# pylint: disable-all
+# flake8: noqa
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
@@ -39,16 +41,11 @@ class Model(nn.Module):
         
         # Opt for simpler, concat then predict (reduces feature dimensionality first)
         self.noatt = noatt
-        if noatt:
-            self.sym_conv_1x1 = nn.Conv2d(feat_dim, hid_dim, 1)
-            self.img_conv_1x1 = nn.Conv2d(feat_dim, hid_dim, 1)
-            hid_dim_noatt = hid_dim * K * (symstream + 1) + hid_dim
-            self.clf_w = nn.Linear(hid_dim_noatt, out_dim)
-            return
 
         # gated tanh activation
-        self.gt_W_img_att = nn.Linear(feat_dim + hid_dim, hid_dim)
-        self.gt_W_prime_img_att = nn.Linear(feat_dim + hid_dim, hid_dim)
+        if not noatt:
+            self.gt_W_img_att = nn.Linear(feat_dim + hid_dim, hid_dim)
+            self.gt_W_prime_img_att = nn.Linear(feat_dim + hid_dim, hid_dim)
         self.gt_W_question = nn.Linear(hid_dim, hid_dim)
         self.gt_W_prime_question = nn.Linear(hid_dim, hid_dim)
         self.gt_W_img = nn.Linear(feat_dim, hid_dim)
@@ -58,15 +55,17 @@ class Model(nn.Module):
 
         # gated tanh for symbol stream (symstream)
         if symstream:
-            self.gt_W_sy_att = nn.Linear(feat_dim + hid_dim, hid_dim)
-            self.gt_W_prime_sy_att = nn.Linear(feat_dim + hid_dim, hid_dim)
+            if not noatt:
+                self.gt_W_sy_att = nn.Linear(feat_dim + hid_dim, hid_dim)
+                self.gt_W_prime_sy_att = nn.Linear(feat_dim + hid_dim, hid_dim)
             self.gt_W_sy = nn.Linear(feat_dim, hid_dim)
             self.gt_W_prime_sy = nn.Linear(feat_dim, hid_dim)
             self.gt_W_question_sy = nn.Linear(hid_dim, hid_dim)
             self.gt_W_prime_question_sy = nn.Linear(hid_dim, hid_dim)
 
         # image attention
-        self.att_wa = nn.Linear(hid_dim, 1)
+        if not noatt:
+            self.att_wa = nn.Linear(hid_dim, 1)
 
         # symbol attention
         if symstream:
@@ -85,75 +84,71 @@ class Model(nn.Module):
         image -> shape (batch, K, feat_dim)
         """
         # question encoding
-        bsize = question.size(0)
         emb = self.wembed(question)                 # (batch, seqlen, emb_dim)
         enc, hid = self.gru(emb.permute(1, 0, 2))   # (seqlen, batch, hid_dim)
         qenc = enc[-1]                              # (batch, hid_dim)
+        image = F.normalize(image.float(), dim=-1)  # (batch, K, feat_dim)
+
+        # element-wise (question + image) multiplication
+        q_head = self._gated_tanh(
+            qenc,
+            self.gt_W_question,
+            self.gt_W_prime_question)
+
+        if self.symstream:
+            symbol = F.normalize(symbol.float(), dim=-1)
+
         if self.noatt:
-            image = F.normalize(image.float(), -1).permute(0, 2, 1).unsqueeze(-1)
-            image = self.img_conv_1x1(image).squeeze().permute(0, 2, 1)
-            if self.symstream:
-                symbol = F.normalize(symbol.float(), -1).permute(0, 2, 1).unsqueeze(-1)
-                symbol = self.sym_conv_1x1(symbol).squeeze().permute(0, 2, 1)
-                concat = torch.cat((qenc.unsqueeze(1), image, symbol), 1).view(bsize, -1)
-            else:
-                concat = torch.cat((qenc.unsqueeze(1), image), 1).view(bsize, -1)
-            s_head = self.clf_w(concat) 
-            return s_head
+            image = image.mean(dim=1)
+            v_head = self._gated_tanh(image, self.gt_W_img, self.gt_W_prime_img)
+            v_gat_head = torch.mul(v_head, q_head)
+
+            if not self.symstream:
+                output = self.clf_w(v_gat_head) 
+                return output
+
+            symbol = symbol.mean(dim=1)
+            s_head = self._gated_tanh(symbol, self.gt_W_sy, self.gt_W_prime_sy)
+            s_gat_head = torch.mul(s_head, q_head)
+            concat = torch.cat((v_gat_head, s_gat_head), dim=1)  # .view(bsize, -1)
+            output = self.clf_w(concat)
+            return output
 
         # image encoding
-        image = F.normalize(image.float(), -1)  # (batch, K, feat_dim)
-
-        # image attention
-        # (batch, K, hid_dim) # TODO: change this cast to double??
         qenc_reshape = qenc.repeat(1, self.K).view(-1, self.K, self.hid_dim)
         # (batch, K, feat_dim + hid_dim)
-        concated = torch.cat((image, qenc_reshape), -1)
+        concated = torch.cat((image, qenc_reshape), dim=-1)
         concated = self._gated_tanh(
             concated,
             self.gt_W_img_att,
             self.gt_W_prime_img_att)   # (batch, K, hid_dim)
+
         a = self.att_wa(concated)                           # (batch, K, 1)
         a = F.softmax(a.squeeze())                          # (batch, K)
         v_head = torch.bmm(a.unsqueeze(1),
                            image).squeeze()  # (batch, feat_dim)
-
-        # element-wise (question + image) multiplication
-        q = self._gated_tanh(
-            qenc,
-            self.gt_W_question,
-            self.gt_W_prime_question)
-        v = self._gated_tanh(v_head, self.gt_W_img, self.gt_W_prime_img)
-        h = torch.mul(q, v)         # (batch, hid_dim)
+        v_head = self._gated_tanh(v_head, self.gt_W_img, self.gt_W_prime_img)
+        v_gat_head = torch.mul(q_head, v_head)         # (batch, hid_dim)
 
         # Symbol attention
         if self.symstream:
-            symbol = F.normalize(symbol.float(), -1)
-            concated_sym = torch.cat((symbol, qenc_reshape), -1)
+            concated_sym = torch.cat((symbol, qenc_reshape), dim=-1)
             concated_sym = self._gated_tanh(
                 concated_sym, self.gt_W_sy_att, self.gt_W_prime_sy_att)
-            a_sy = self.att_wa(concated_sym)
+            a_sy = self.sy_att_wa(concated_sym)
             a_sy = F.softmax(a.squeeze())
-            v_head_sy = torch.bmm(a_sy.unsqueeze(1), symbol).squeeze()
+            s_head = torch.bmm(a_sy.unsqueeze(1), symbol).squeeze()
 
-            # element-wise (question + symbol features) multiplication
-            q_sy = self._gated_tanh(
-                qenc,
-                self.gt_W_question_sy,
-                self.gt_W_prime_question_sy)
-            v_sy = self._gated_tanh(
-                v_head_sy, self.gt_W_sy, self.gt_W_prime_sy)
-            h_sy = torch.mul(q_sy, v_sy)
-            s_head = self.clf_w(torch.cat((h, h_sy), -1))
-            # s_head = F.softmax(s_head, dim=1)
-            return s_head
+            s_head = self._gated_tanh(
+                s_head, self.gt_W_sy, self.gt_W_prime_sy)
+            s_gat_head = torch.mul(q_head, s_head)
+
+            output = self.clf_w(torch.cat((s_gat_head, v_gat_head), -1))
+            return output
 
         # output classifier
-        # s_head = self.clf_w(self._gated_tanh(h, self.gt_W_clf, self.gt_W_prime_clf))
-        s_head = self.clf_w(h)
-        # s_head = F.softmax(s_head, dim=1)
-
-        return s_head               # (batch, out_dim)
+        output = self.clf_w(v_gat_head)
+        return output               # (batch, out_dim)
 
     def _gated_tanh(self, x, W, W_prime):
         """
